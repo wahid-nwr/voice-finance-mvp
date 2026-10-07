@@ -1,0 +1,97 @@
+secrets:
+  FIREBASE_SERVICE_ACCOUNT_JSON_V2:
+    file: /home/wahid/git/gcs-key-files/alert-cursor-476219-s1-0c886e22490a.json
+
+services:
+  api:
+    build: ./ai-document-intelligence
+    ports:
+      - "8080:8080"
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/FIREBASE_SERVICE_ACCOUNT_JSON_V2
+      OPENAI_ENABLED: true
+      R2_ACCESS_KEY: ${R2_ACCESS_KEY}
+      R2_SECRET_KEY: ${R2_SECRET_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      NEO4J_BASE_URL: ${NEO4J_BASE_URL}
+    secrets:
+      - FIREBASE_SERVICE_ACCOUNT_JSON_V2
+    depends_on:
+      neo4j:
+        condition: service_healthy
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+
+  ollama:
+    image: ollama/ollama:latest
+    environment:
+      OLLAMA_KEEP_ALIVE: -1
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+
+  docdb:
+    image: postgres:16-alpine
+    container_name: my-postgres-db
+    restart: always
+    ports:
+      - "65432:5432"
+    environment:
+      POSTGRES_DB: document-db
+      POSTGRES_USER: wahid
+      POSTGRES_PASSWORD: anwar
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wahid -d document-db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  neo4j:
+    image: neo4j:5.12  # latest 5.x stable
+    container_name: neo4j
+    ports:
+      - "7474:7474"   # HTTP browser / REST API
+      - "7687:7687"   # Bolt (used by your Java driver)
+    environment:
+      NEO4J_AUTH: neo4j/mysecretpassword   # username/password
+      NEO4J_dbms_default__listen__address: 0.0.0.0
+      NEO4J_dbms_security_auth__enabled: "true"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - neo4j_import:/import
+      - neo4j_plugins:/plugins
+    restart: unless-stopped
+    healthcheck:
+      # Use wget or curl to check the HTTP port
+      test: [ "CMD", "wget", "--spider", "http://localhost:7474" ]
+      interval: 5s
+      timeout: 10s
+      retries: 5
+      start_period: 20s # Gives time for initial database boot sequence
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:latest
+    container_name: keycloakmvp
+    command: start-dev
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+    ports:
+      - "8088:8080"
+    restart: unless-stopped
+
+volumes:
+  ollama:
+  db_data:
+  neo4j_data:
+  neo4j_logs:
+  neo4j_import:
+  neo4j_plugins:
